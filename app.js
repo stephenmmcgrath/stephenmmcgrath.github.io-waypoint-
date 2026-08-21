@@ -241,8 +241,13 @@ function lockGuess(){
 }
 
 /* ---------------- Header / drawer stats ---------------- */
+const MAX_SCORE_PER_ROUND = 5000;
+
 function updateHeaderStats(){
-  document.getElementById('sessionScore').textContent = stats.totalScore;
+  const maxPossible = stats.rounds * MAX_SCORE_PER_ROUND;
+  const pct = maxPossible ? Math.round((stats.totalScore/maxPossible)*100) : null;
+  document.getElementById('sessionScore').textContent = `${stats.totalScore} / ${maxPossible}`;
+  document.getElementById('sessionPct').textContent = pct === null ? '—' : `${pct}%`;
   document.getElementById('roundCount').textContent = stats.rounds;
   document.getElementById('avgScore').textContent = stats.rounds ? Math.round(stats.totalScore/stats.rounds) : '—';
   document.getElementById('bestScoreStat').textContent = stats.rounds ? `${stats.best} pts` : '—';
@@ -315,8 +320,32 @@ function wireUI(){
     updateHeaderStats();
   });
 
+  wireLocationSearch();
   updateHeaderStats();
   renderAddedList();
+}
+
+function wireLocationSearch(){
+  const input = document.getElementById('addSearch');
+  if(!window.google || !google.maps.places) return;
+  const autocomplete = new google.maps.places.Autocomplete(input, {
+    fields:['name','geometry','address_components']
+  });
+  autocomplete.addListener('place_changed', ()=>{
+    const place = autocomplete.getPlace();
+    if(!place.geometry) return;
+    const lat = place.geometry.location.lat();
+    const lng = place.geometry.location.lng();
+    let country = '';
+    (place.address_components || []).forEach(comp=>{
+      if(comp.types.includes('country')) country = comp.long_name;
+    });
+    document.getElementById('addName').value = place.name || '';
+    document.getElementById('addCountry').value = country;
+    document.getElementById('addLat').value = lat.toFixed(5);
+    document.getElementById('addLng').value = lng.toFixed(5);
+    input.value = '';
+  });
 }
 
 function openDrawer(){

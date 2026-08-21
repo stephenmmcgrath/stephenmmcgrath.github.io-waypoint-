@@ -127,7 +127,7 @@
   #guessMap{width:100%; height:calc(100% - 33px);}
 
   .lock-guess-btn{
-    position:absolute; bottom:20px; right:20px; z-index:19;
+    position:absolute; bottom:20px; left:20px; z-index:21;
     font-family:'Fraunces',serif; font-weight:600; font-size:0.95rem;
     background:var(--brass); color:var(--ink); border:none;
     padding:13px 22px; border-radius:10px; cursor:pointer;
@@ -267,6 +267,15 @@
   .msg.ok{background:rgba(62,108,69,0.25); color:#a8d4ab; border:1px solid rgba(62,108,69,0.4);}
   .msg.err{background:rgba(192,83,59,0.2); color:#e5a190; border:1px solid rgba(192,83,59,0.4);}
 
+  .pac-container{
+    background:var(--ink-2); border:1px solid var(--line); border-radius:8px;
+    font-family:'Inter',sans-serif; margin-top:4px;
+  }
+  .pac-item{color:var(--text-dim); border-top:1px solid var(--line); padding:8px 10px; font-size:0.85rem;}
+  .pac-item:hover{background:rgba(201,161,90,0.1);}
+  .pac-item-query{color:var(--parchment);}
+  .pac-matched{color:var(--brass-bright);}
+
   @media (max-width:640px){
     header{padding:14px 16px;}
     .brand h1{font-size:1.15rem;}
@@ -275,7 +284,7 @@
     .tab{padding:11px 14px; font-size:0.85rem;}
     .guess-panel{width:150px; height:110px; bottom:14px; right:14px;}
     .guess-panel.expanded{width:92vw; height:52vh; right:4vw;}
-    .lock-guess-btn{bottom:14px; right:14px; padding:11px 16px; font-size:0.85rem;}
+    .lock-guess-btn{bottom:14px; left:14px; padding:11px 16px; font-size:0.85rem;}
     .result-card{margin:0 8px 8px; padding:20px 18px 16px;}
     .result-place{font-size:1.1rem;}
     .score-badge{width:62px; height:62px;}
@@ -298,7 +307,8 @@
     </div>
   </div>
   <div class="score-tally">
-    <div class="stat"><div class="num" id="sessionScore">0</div><div class="lbl">Session Pts</div></div>
+    <div class="stat"><div class="num" id="sessionScore">0 / 0</div><div class="lbl">Score</div></div>
+    <div class="stat"><div class="num" id="sessionPct">—</div><div class="lbl">Accuracy</div></div>
     <div class="stat"><div class="num" id="roundCount">0</div><div class="lbl">Waypoints</div></div>
     <button class="icon-btn" id="openDrawerBtn" title="Add locations & stats">☰</button>
   </div>
@@ -378,7 +388,11 @@
   <div class="drawer-divider"></div>
 
   <h3 style="font-size:1.05rem;">Add a Waypoint</h3>
-  <div class="drawer-sub">Add anywhere in the world — it joins the rotation immediately.</div>
+  <div class="drawer-sub">Search a place by name, or enter coordinates manually.</div>
+  <div class="field-group">
+    <label>Search for a place</label>
+    <input type="text" id="addSearch" placeholder="Start typing a place name…">
+  </div>
   <div class="field-group">
     <label>Place name</label>
     <input type="text" id="addName" placeholder="e.g. Ushuaia">
@@ -408,6 +422,6 @@
 
 <script src="locations.js"></script>
 <script src="app.js"></script>
-<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAszW3TKKVaTZVhsGnF8v5cMb4wkdnEKz4&callback=initWaypoint&v=weekly"></script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAszW3TKKVaTZVhsGnF8v5cMb4wkdnEKz4&libraries=places&callback=initWaypoint&v=weekly"></script>
 </body>
 </html>
