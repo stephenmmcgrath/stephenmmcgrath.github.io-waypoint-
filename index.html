@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Waypoint — Field Guessing Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0F1B2B;
+    --ink-2:#16273B;
+    --parchment:#F2E9D8;
+    --parchment-dim:#E4D8BE;
+    --brass:#C9A15A;
+    --brass-bright:#E0BC7C;
+    --pine:#2F5233;
+    --pine-bright:#3E6C45;
+    --coral:#C0533B;
+    --line:rgba(242,233,216,0.14);
+    --text-dim:rgba(242,233,216,0.62);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(201,161,90,0.10), transparent 45%),
+      radial-gradient(ellipse at 100% 110%, rgba(47,82,51,0.18), transparent 50%),
+      var(--ink);
+    color:var(--parchment);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+  ::selection{background:var(--brass); color:var(--ink);}
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 28px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, rgba(22,39,59,0.9), rgba(22,39,59,0.4));
+    backdrop-filter:blur(6px);
+    position:sticky; top:0; z-index:50;
+  }
+  .brand{display:flex; align-items:center; gap:14px;}
+  .compass{width:34px; height:34px; flex-shrink:0;}
+  .brand h1{
+    font-family:'Fraunces',serif; font-weight:700; font-size:1.5rem;
+    letter-spacing:0.01em;
+  }
+  .brand .sub{
+    font-size:0.68rem; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--brass); font-weight:500; margin-top:2px;
+  }
+  .brand-text{display:flex; flex-direction:column;}
+  .score-tally{
+    display:flex; align-items:center; gap:22px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .score-tally .stat{text-align:right;}
+  .score-tally .stat .num{font-size:1.25rem; font-weight:700; color:var(--brass-bright);}
+  .score-tally .stat .lbl{font-size:0.62rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-dim);}
+  .icon-btn{
+    background:transparent; border:1px solid var(--line); color:var(--parchment);
+    width:38px; height:38px; border-radius:8px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:all 0.15s ease; font-size:1.05rem;
+  }
+  .icon-btn:hover{border-color:var(--brass); color:var(--brass-bright); background:rgba(201,161,90,0.08);}
+
+  /* ---------- Mode tabs ---------- */
+  .tabs{
+    display:flex; gap:0; padding:0 28px; border-bottom:1px solid var(--line);
+    background:rgba(15,27,43,0.5);
+  }
+  .tab{
+    font-family:'Fraunces',serif; font-weight:600; font-size:0.95rem;
+    padding:13px 20px; cursor:pointer; color:var(--text-dim);
+    border-bottom:2px solid transparent; transition:all 0.15s ease;
+    display:flex; align-items:center; gap:8px;
+  }
+  .tab.active{color:var(--brass-bright); border-bottom-color:var(--brass);}
+  .tab:hover:not(.active){color:var(--parchment);}
+  .tab .dot{width:6px; height:6px; border-radius:50%; background:currentColor; opacity:0.7;}
+
+  /* ---------- Main stage ---------- */
+  main{position:relative; width:100%; height:calc(100vh - 112px); min-height:480px;}
+  #stage{width:100%; height:100%; background:#08101a;}
+  .stage-loading{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px; background:var(--ink); z-index:5;
+  }
+  .stage-loading .spinner{
+    width:34px; height:34px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--brass);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .stage-loading p{font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--text-dim); letter-spacing:0.05em;}
+
+  /* ---------- Guess panel (mini map, expands) ---------- */
+  .guess-panel{
+    position:absolute; bottom:20px; right:20px; z-index:20;
+    width:280px; height:200px;
+    border-radius:12px; overflow:hidden;
+    border:2px solid var(--brass);
+    box-shadow:0 12px 32px rgba(0,0,0,0.5);
+    transition:width 0.25s ease, height 0.25s ease;
+    background:var(--ink-2);
+  }
+  .guess-panel.expanded{width:min(560px,88vw); height:min(420px,60vh);}
+  .guess-panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 12px; background:var(--ink-2); border-bottom:1px solid var(--line);
+  }
+  .guess-panel-head span{
+    font-family:'JetBrains Mono',monospace; font-size:0.68rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--brass-bright);
+  }
+  .guess-panel-head button{
+    background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:0.95rem;
+    padding:2px 6px;
+  }
+  .guess-panel-head button:hover{color:var(--parchment);}
+  #guessMap{width:100%; height:calc(100% - 33px);}
+
+  .lock-guess-btn{
+    position:absolute; bottom:20px; right:20px; z-index:19;
+    font-family:'Fraunces',serif; font-weight:600; font-size:0.95rem;
+    background:var(--brass); color:var(--ink); border:none;
+    padding:13px 22px; border-radius:10px; cursor:pointer;
+    box-shadow:0 8px 24px rgba(0,0,0,0.35);
+    transition:transform 0.12s ease, background 0.15s ease;
+    display:none;
+  }
+  .lock-guess-btn.visible{display:block;}
+  .lock-guess-btn:hover{background:var(--brass-bright); transform:translateY(-1px);}
+  .lock-guess-btn:disabled{opacity:0.4; cursor:not-allowed; transform:none;}
+
+  /* ---------- Top-left info chip ---------- */
+  .round-chip{
+    position:absolute; top:16px; left:16px; z-index:20;
+    background:rgba(15,27,43,0.88); border:1px solid var(--line);
+    padding:8px 14px; border-radius:9px;
+    font-family:'JetBrains Mono',monospace; font-size:0.72rem;
+    color:var(--text-dim); letter-spacing:0.04em;
+    backdrop-filter:blur(4px);
+  }
+  .round-chip b{color:var(--brass-bright);}
+
+  /* ---------- New round / start overlay ---------- */
+  .start-overlay{
+    position:absolute; inset:0; z-index:30;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(15,27,43,0.94), rgba(8,16,26,0.98));
+  }
+  .start-card{text-align:center; max-width:480px; padding:0 24px;}
+  .start-card .compass-big{width:70px; height:70px; margin:0 auto 22px;}
+  .start-card h2{font-family:'Fraunces',serif; font-weight:700; font-size:1.9rem; margin-bottom:10px;}
+  .start-card p{color:var(--text-dim); font-size:0.95rem; line-height:1.6; margin-bottom:26px;}
+  .primary-btn{
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.05rem;
+    background:var(--brass); color:var(--ink); border:none;
+    padding:14px 32px; border-radius:10px; cursor:pointer;
+    transition:all 0.15s ease;
+  }
+  .primary-btn:hover{background:var(--brass-bright); transform:translateY(-1px);}
+  .ghost-btn{
+    font-family:'Inter',sans-serif; font-weight:500; font-size:0.85rem;
+    background:transparent; color:var(--text-dim); border:1px solid var(--line);
+    padding:10px 20px; border-radius:9px; cursor:pointer; margin-top:12px;
+    transition:all 0.15s ease;
+  }
+  .ghost-btn:hover{border-color:var(--brass); color:var(--brass-bright);}
+
+  /* ---------- Result panel (field log stamp) ---------- */
+  .result-overlay{
+    position:absolute; inset:0; z-index:40; display:none;
+    align-items:flex-end; justify-content:center;
+    background:linear-gradient(180deg, transparent 0%, rgba(8,16,26,0.55) 55%);
+    padding-bottom:0;
+  }
+  .result-overlay.visible{display:flex;}
+  .result-card{
+    width:100%; max-width:640px; margin:0 18px 18px;
+    background:var(--parchment); color:var(--ink);
+    border-radius:16px 16px 8px 8px; padding:26px 28px 22px;
+    box-shadow:0 -12px 40px rgba(0,0,0,0.5);
+    position:relative; overflow:hidden;
+    animation:riseUp 0.35s cubic-bezier(.2,.8,.3,1);
+  }
+  @keyframes riseUp{from{transform:translateY(40px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .result-card::before{
+    content:''; position:absolute; top:0; left:0; right:0; height:4px;
+    background:repeating-linear-gradient(90deg, var(--pine) 0 10px, transparent 10px 18px);
+  }
+  .result-top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px;}
+  .result-place{font-family:'Fraunces',serif; font-weight:700; font-size:1.35rem; line-height:1.2;}
+  .result-place span{display:block; font-family:'Inter',sans-serif; font-weight:500; font-size:0.8rem; color:#5a5040; margin-top:3px;}
+  .score-badge{
+    flex-shrink:0; width:74px; height:74px; border-radius:50%;
+    background:var(--pine); color:var(--parchment);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border:3px solid #1f3a23; font-family:'JetBrains Mono',monospace;
+  }
+  .score-badge .n{font-size:1.35rem; font-weight:700; line-height:1;}
+  .score-badge .l{font-size:0.5rem; letter-spacing:0.06em; text-transform:uppercase; opacity:0.85;}
+  .result-stats{
+    display:flex; gap:22px; font-family:'JetBrains Mono',monospace;
+    padding:12px 0; border-top:1px dashed rgba(15,27,43,0.2); border-bottom:1px dashed rgba(15,27,43,0.2);
+    margin-bottom:16px; flex-wrap:wrap;
+  }
+  .result-stats .stat .n{font-size:1rem; font-weight:700;}
+  .result-stats .stat .l{font-size:0.62rem; text-transform:uppercase; letter-spacing:0.08em; color:#6b6250;}
+  .result-actions{display:flex; gap:10px; justify-content:flex-end;}
+  .result-actions .primary-btn{padding:11px 24px; font-size:0.92rem;}
+
+  /* ---------- Side drawer (add location / settings) ---------- */
+  .drawer-backdrop{
+    position:fixed; inset:0; background:rgba(8,16,26,0.65); z-index:60;
+    display:none; backdrop-filter:blur(2px);
+  }
+  .drawer-backdrop.visible{display:block;}
+  .drawer{
+    position:fixed; top:0; right:-420px; width:400px; max-width:88vw; height:100%;
+    background:var(--ink-2); z-index:61; border-left:1px solid var(--line);
+    transition:right 0.28s cubic-bezier(.2,.8,.3,1);
+    padding:26px 24px; overflow-y:auto;
+  }
+  .drawer.open{right:0;}
+  .drawer h3{font-family:'Fraunces',serif; font-weight:700; font-size:1.25rem; margin-bottom:4px;}
+  .drawer .drawer-sub{font-size:0.8rem; color:var(--text-dim); margin-bottom:22px;}
+  .field-group{margin-bottom:16px;}
+  .field-group label{
+    display:block; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--brass-bright); margin-bottom:6px; font-weight:600;
+  }
+  .field-group input, .field-group select{
+    width:100%; background:var(--ink); border:1px solid var(--line); color:var(--parchment);
+    padding:10px 12px; border-radius:8px; font-family:'Inter',sans-serif; font-size:0.9rem;
+  }
+  .field-group input:focus, .field-group select:focus{outline:none; border-color:var(--brass);}
+  .field-row{display:flex; gap:10px;}
+  .field-row .field-group{flex:1;}
+  .drawer-divider{border-top:1px solid var(--line); margin:22px 0;}
+  .stat-line{
+    display:flex; justify-content:space-between; padding:9px 0;
+    border-bottom:1px solid var(--line); font-size:0.85rem;
+  }
+  .stat-line b{color:var(--brass-bright); font-family:'JetBrains Mono',monospace;}
+  .added-list{max-height:180px; overflow-y:auto; margin-top:10px;}
+  .added-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 10px; background:var(--ink); border-radius:7px; margin-bottom:6px;
+    font-size:0.82rem;
+  }
+  .added-item button{background:none; border:none; color:var(--coral); cursor:pointer; font-size:0.9rem;}
+  .close-drawer{
+    position:absolute; top:22px; right:20px; background:none; border:none;
+    color:var(--text-dim); font-size:1.1rem; cursor:pointer;
+  }
+  .close-drawer:hover{color:var(--parchment);}
+  .msg{font-size:0.78rem; padding:9px 12px; border-radius:7px; margin-top:8px; display:none;}
+  .msg.show{display:block;}
+  .msg.ok{background:rgba(62,108,69,0.25); color:#a8d4ab; border:1px solid rgba(62,108,69,0.4);}
+  .msg.err{background:rgba(192,83,59,0.2); color:#e5a190; border:1px solid rgba(192,83,59,0.4);}
+
+  @media (max-width:640px){
+    header{padding:14px 16px;}
+    .brand h1{font-size:1.15rem;}
+    .score-tally{gap:14px;}
+    .tabs{padding:0 16px;}
+    .tab{padding:11px 14px; font-size:0.85rem;}
+    .guess-panel{width:150px; height:110px; bottom:14px; right:14px;}
+    .guess-panel.expanded{width:92vw; height:52vh; right:4vw;}
+    .lock-guess-btn{bottom:14px; right:14px; padding:11px 16px; font-size:0.85rem;}
+    .result-card{margin:0 8px 8px; padding:20px 18px 16px;}
+    .result-place{font-size:1.1rem;}
+    .score-badge{width:62px; height:62px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg class="compass" viewBox="0 0 40 40" fill="none">
+      <circle cx="20" cy="20" r="17.5" stroke="#C9A15A" stroke-width="1.5"/>
+      <circle cx="20" cy="20" r="1.6" fill="#C9A15A"/>
+      <path d="M20 6 L23.5 20 L20 34 L16.5 20 Z" fill="#C9A15A" opacity="0.9"/>
+      <path d="M6 20 L20 16.5 L34 20 L20 23.5 Z" fill="#E4D8BE" opacity="0.5"/>
+    </svg>
+    <div class="brand-text">
+      <h1>Waypoint</h1>
+      <div class="sub">Field Guessing Log</div>
+    </div>
+  </div>
+  <div class="score-tally">
+    <div class="stat"><div class="num" id="sessionScore">0</div><div class="lbl">Session Pts</div></div>
+    <div class="stat"><div class="num" id="roundCount">0</div><div class="lbl">Waypoints</div></div>
+    <button class="icon-btn" id="openDrawerBtn" title="Add locations & stats">☰</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-mode="streetview"><span class="dot"></span>Street Guesser</div>
+  <div class="tab" data-mode="satellite"><span class="dot"></span>Satellite Guesser</div>
+</div>
+
+<main>
+  <div id="stage"></div>
+
+  <div class="stage-loading" id="stageLoading">
+    <div class="spinner"></div>
+    <p>SCOUTING NEXT WAYPOINT…</p>
+  </div>
+
+  <div class="round-chip" id="roundChip" style="display:none;">
+    Round <b id="roundNum">1</b>
+  </div>
+
+  <div class="guess-panel" id="guessPanel" style="display:none;">
+    <div class="guess-panel-head">
+      <span>Drop Your Pin</span>
+      <button id="expandGuessBtn" title="Expand map">⤢</button>
+    </div>
+    <div id="guessMap"></div>
+  </div>
+
+  <button class="lock-guess-btn" id="lockGuessBtn" disabled>Lock In Guess</button>
+
+  <div class="start-overlay" id="startOverlay">
+    <div class="start-card">
+      <svg class="compass-big" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="17.5" stroke="#C9A15A" stroke-width="1.5"/>
+        <circle cx="20" cy="20" r="1.6" fill="#C9A15A"/>
+        <path d="M20 6 L23.5 20 L20 34 L16.5 20 Z" fill="#C9A15A" opacity="0.9"/>
+        <path d="M6 20 L20 16.5 L34 20 L20 23.5 Z" fill="#E4D8BE" opacity="0.5"/>
+      </svg>
+      <h2>Ready when you are</h2>
+      <p>Drop into a street view or spot it from above — then pin your best guess on the map. Distance decides the score. <span id="locCountText"></span></p>
+      <button class="primary-btn" id="beginBtn">Begin Expedition</button>
+    </div>
+  </div>
+
+  <div class="result-overlay" id="resultOverlay">
+    <div class="result-card">
+      <div class="result-top">
+        <div class="result-place">
+          <span id="resultCountry">—</span>
+          <span id="resultDistanceCoords">—</span>
+        </div>
+        <div class="score-badge"><div class="n" id="resultScore">0</div><div class="l">points</div></div>
+      </div>
+      <div class="result-stats">
+        <div class="stat"><div class="n" id="resultDistance">—</div><div class="l">Distance off</div></div>
+        <div class="stat"><div class="n" id="resultBest">—</div><div class="l">Best this session</div></div>
+      </div>
+      <div class="result-actions">
+        <button class="primary-btn" id="nextRoundBtn">Next Waypoint</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<div class="drawer" id="drawer">
+  <button class="close-drawer" id="closeDrawerBtn">✕</button>
+  <h3>Field Notes</h3>
+  <div class="drawer-sub">Session stats & your own added waypoints.</div>
+
+  <div class="stat-line"><span>Locations in rotation</span><b id="totalLocCount">—</b></div>
+  <div class="stat-line"><span>Session average score</span><b id="avgScore">—</b></div>
+  <div class="stat-line"><span>Best guess (session)</span><b id="bestScoreStat">—</b></div>
+
+  <div class="drawer-divider"></div>
+
+  <h3 style="font-size:1.05rem;">Add a Waypoint</h3>
+  <div class="drawer-sub">Add anywhere in the world — it joins the rotation immediately.</div>
+  <div class="field-group">
+    <label>Place name</label>
+    <input type="text" id="addName" placeholder="e.g. Ushuaia">
+  </div>
+  <div class="field-group">
+    <label>Country / region</label>
+    <input type="text" id="addCountry" placeholder="e.g. Argentina">
+  </div>
+  <div class="field-row">
+    <div class="field-group">
+      <label>Latitude</label>
+      <input type="text" id="addLat" placeholder="-54.8019">
+    </div>
+    <div class="field-group">
+      <label>Longitude</label>
+      <input type="text" id="addLng" placeholder="-68.3030">
+    </div>
+  </div>
+  <button class="primary-btn" id="addLocBtn" style="width:100%;">Add to Rotation</button>
+  <div class="msg" id="addMsg"></div>
+
+  <div class="added-list" id="addedList"></div>
+
+  <div class="drawer-divider"></div>
+  <div class="stat-line"><span>Reset session score</span><button class="ghost-btn" id="resetSessionBtn" style="margin:0; padding:6px 14px;">Reset</button></div>
+</div>
+
+<script src="locations.js"></script>
+<script src="app.js"></script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAszW3TKKVaTZVhsGnF8v5cMb4wkdnEKz4&callback=initWaypoint&v=weekly"></script>
+</body>
+</html>
