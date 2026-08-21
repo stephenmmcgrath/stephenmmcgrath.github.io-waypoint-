@@ -1,19 +1,62 @@
 /* Waypoint — Field Guessing Log
    Cooperative local GeoGuessr-style game built on the Google Maps Platform. */
 
+const SUPABASE_URL = 'https://rkfoehpnleolzoffcjou.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_MQmKVyjXRRZka-HVh6BAow_0J8dTJ8b';
+let supa = null;
+
 const CUSTOM_KEY = 'waypoint_custom_locations';
 const STATS_KEY = 'waypoint_session_stats';
+const MAPS_KEY_STORAGE = 'waypoint_maps_api_key';
 const MAX_STREETVIEW_ATTEMPTS = 6;
+
+/* ---------------- Maps API key bootstrap ---------------- */
+function bootstrapMaps(){
+  const savedKey = localStorage.getItem(MAPS_KEY_STORAGE);
+  if(savedKey){
+    loadMapsScript(savedKey);
+  } else {
+    document.getElementById('keyOverlay').style.display = 'flex';
+  }
+  document.getElementById('saveKeyBtn').addEventListener('click', ()=>{
+    const key = document.getElementById('keyInput').value.trim();
+    const msg = document.getElementById('keyMsg');
+    if(!key.startsWith('AIza') || key.length < 30){
+      msg.textContent = 'That doesn\'t look like a valid Google Maps API key.';
+      msg.className = 'msg show err';
+      return;
+    }
+    localStorage.setItem(MAPS_KEY_STORAGE, key);
+    document.getElementById('keyOverlay').style.display = 'none';
+    loadMapsScript(key);
+  });
+}
+
+function loadMapsScript(key){
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=initWaypoint&v=weekly`;
+  script.async = true;
+  script.onerror = () => {
+    localStorage.removeItem(MAPS_KEY_STORAGE);
+    document.getElementById('keyOverlay').style.display = 'flex';
+    document.getElementById('keyMsg').textContent = 'Couldn\'t load Google Maps with that key — check it and try again.';
+    document.getElementById('keyMsg').className = 'msg show err';
+  };
+  document.head.appendChild(script);
+}
+
+document.addEventListener('DOMContentLoaded', bootstrapMaps);
 
 let map, guessMap, panorama;
 let guessMarker = null;
 let actualMarker = null;
 let guessLine = null;
 let mode = 'streetview';
+let currentGame = 'world';
 let currentLocation = null;
-let usedIndices = new Set();
 let allLocations = [];
 let hasGuessed = false;
+let deckByGame = {};
 
 let stats = loadStats();
 
@@ -38,10 +81,73 @@ function saveCustomLocations(list){
   localStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
 }
 
+function initSupabase(){
+  try{
+    if(window.supabase){
+      supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+  }catch(e){ console.warn('Supabase init failed, running local-only', e); }
+}
+
+async function loadCloudState(){
+  if(!supa) return null;
+  try{
+    const { data, error } = await supa.from('waypoint_state').select('*').eq('id','shared').single();
+    if(error) throw error;
+    return data;
+  }catch(e){ console.warn('Cloud state load failed, using local stats', e); return null; }
+}
+
+async function saveCloudState(){
+  if(!supa) return;
+  try{
+    await supa.from('waypoint_state').update({
+      total_score: stats.totalScore, rounds: stats.rounds, best: stats.best, updated_at: new Date().toISOString()
+    }).eq('id','shared');
+  }catch(e){ console.warn('Cloud state save failed', e); }
+}
+
+async function loadCloudCustomLocations(){
+  if(!supa) return null;
+  try{
+    const { data, error } = await supa.from('waypoint_custom_locations').select('*').order('created_at',{ascending:true});
+    if(error) throw error;
+    return data.map(d => ({name:d.name, country:d.country, lat:d.lat, lng:d.lng, cloudId:d.id}));
+  }catch(e){ console.warn('Cloud locations load failed, using local list', e); return null; }
+}
+
+async function saveCloudCustomLocation(loc){
+  if(!supa) return null;
+  try{
+    const { data, error } = await supa.from('waypoint_custom_locations')
+      .insert({name:loc.name, country:loc.country, lat:loc.lat, lng:loc.lng}).select().single();
+    if(error) throw error;
+    return data.id;
+  }catch(e){ console.warn('Cloud location save failed', e); return null; }
+}
+
+async function deleteCloudCustomLocation(cloudId){
+  if(!supa || !cloudId) return;
+  try{ await supa.from('waypoint_custom_locations').delete().eq('id', cloudId); }
+  catch(e){ console.warn('Cloud location delete failed', e); }
+}
+
 function buildLocationList(){
   const base = BASE_LOCATIONS.map(([name,country,lat,lng]) => ({name,country,lat,lng,custom:false}));
   const custom = loadCustomLocations().map(l => ({...l,custom:true}));
   allLocations = base.concat(custom);
+}
+
+function getPool(game){
+  if(game === 'amazingRace'){
+    return (typeof AMAZING_RACE_LOCATIONS !== 'undefined' ? AMAZING_RACE_LOCATIONS : [])
+      .map(([name,country,lat,lng]) => ({name,country,lat,lng}));
+  }
+  if(game === 'familyFun'){
+    return (typeof FAMILY_FUN_LOCATIONS !== 'undefined' ? FAMILY_FUN_LOCATIONS : [])
+      .map(([name,country,lat,lng]) => ({name,country,lat,lng}));
+  }
+  return allLocations;
 }
 
 function haversineKm(lat1,lng1,lat2,lng2){
@@ -60,8 +166,23 @@ function scoreFromDistance(km){
 }
 
 /* ---------------- Google Maps callback ---------------- */
-function initWaypoint(){
+async function initWaypoint(){
+  initSupabase();
+
+  const cloudState = await loadCloudState();
+  if(cloudState){
+    stats = { totalScore:cloudState.total_score, rounds:cloudState.rounds, best:cloudState.best };
+    saveStats();
+  }
+
   buildLocationList();
+
+  const cloudLocs = await loadCloudCustomLocations();
+  if(cloudLocs){
+    saveCustomLocations(cloudLocs);
+    buildLocationList();
+  }
+
   updateLocCountUI();
 
   guessMap = new google.maps.Map(document.getElementById('guessMap'), {
@@ -79,25 +200,36 @@ function initWaypoint(){
 function mapDarkStyle(){
   return [
     {elementType:'geometry',stylers:[{color:'#16273B'}]},
-    {elementType:'labels.text.fill',stylers:[{color:'#8a94a3'}]},
+    {elementType:'labels.text.fill',stylers:[{color:'#a9b4c2'}]},
     {elementType:'labels.text.stroke',stylers:[{color:'#0F1B2B'}]},
-    {featureType:'administrative.country',elementType:'geometry.stroke',stylers:[{color:'#3a4a5c'}]},
+    {featureType:'administrative.country',elementType:'geometry.stroke',stylers:[{color:'#C9A15A'}, {weight:0.6}]},
+    {featureType:'administrative.province',elementType:'geometry.stroke',stylers:[{color:'#3a4a5c'}]},
     {featureType:'water',elementType:'geometry',stylers:[{color:'#0c1826'}]},
     {featureType:'landscape',elementType:'geometry',stylers:[{color:'#1b2e42'}]},
-    {featureType:'poi',stylers:[{visibility:'off'}]},
-    {featureType:'road',stylers:[{visibility:'off'}]},
+    {featureType:'poi',elementType:'labels',stylers:[{visibility:'off'}]},
+    {featureType:'road',elementType:'geometry',stylers:[{color:'#2a3f56'}]},
+    {featureType:'road',elementType:'labels',stylers:[{visibility:'simplified'}]},
     {featureType:'transit',stylers:[{visibility:'off'}]}
   ];
 }
 
 /* ---------------- Round flow ---------------- */
-function pickNextIndex(){
-  if(usedIndices.size >= allLocations.length) usedIndices.clear();
-  let idx;
-  do{ idx = Math.floor(Math.random()*allLocations.length); }
-  while(usedIndices.has(idx));
-  usedIndices.add(idx);
-  return idx;
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function drawNextLocation(){
+  const pool = getPool(currentGame);
+  if(!deckByGame[currentGame] || deckByGame[currentGame].length === 0){
+    deckByGame[currentGame] = shuffle(pool.map((_, i) => i));
+  }
+  const idx = deckByGame[currentGame].pop();
+  return pool[idx];
 }
 
 function startRound(){
@@ -112,8 +244,7 @@ function startRound(){
   if(mode === 'streetview'){
     findStreetViewRound(0);
   } else {
-    const idx = pickNextIndex();
-    currentLocation = allLocations[idx];
+    currentLocation = drawNextLocation();
     setupSatelliteStage(currentLocation);
     finishRoundSetup();
   }
@@ -122,14 +253,12 @@ function startRound(){
 function findStreetViewRound(attempt){
   if(attempt >= MAX_STREETVIEW_ATTEMPTS){
     // fall back to satellite for this round rather than stall
-    const idx = pickNextIndex();
-    currentLocation = allLocations[idx];
+    currentLocation = drawNextLocation();
     setupSatelliteStage(currentLocation);
     finishRoundSetup();
     return;
   }
-  const idx = pickNextIndex();
-  const loc = allLocations[idx];
+  const loc = drawNextLocation();
   const svService = new google.maps.StreetViewService();
   svService.getPanorama({location:{lat:loc.lat,lng:loc.lng}, radius:40000, source:google.maps.StreetViewSource.OUTDOOR}, (data,status)=>{
     if(status === google.maps.StreetViewStatus.OK){
@@ -163,12 +292,20 @@ function setupStreetViewStage(panoId){
 function setupSatelliteStage(loc){
   const stageEl = document.getElementById('stage');
   stageEl.innerHTML = '';
-  const zoom = 12 + Math.floor(Math.random()*3);
+  const zoom = 13 + Math.floor(Math.random()*2);
   map = new google.maps.Map(stageEl, {
     center:{lat:loc.lat,lng:loc.lng}, zoom,
     mapTypeId:'satellite', disableDefaultUI:true,
-    draggable:false, zoomControl:false, gestureHandling:'none',
+    draggable:false, scrollwheel:false, disableDoubleClickZoom:true,
+    zoomControl:true, gestureHandling:'none',
     keyboardShortcuts:false, tilt:0
+  });
+  // zoom buttons can still shift the reported center in some browsers — snap back to the true point
+  map.addListener('center_changed', ()=>{
+    const c = map.getCenter();
+    if(c.lat().toFixed(4) != loc.lat.toFixed(4) || c.lng().toFixed(4) != loc.lng.toFixed(4)){
+      map.setCenter({lat:loc.lat,lng:loc.lng});
+    }
   });
 }
 
@@ -177,9 +314,10 @@ function finishRoundSetup(){
   document.getElementById('roundChip').style.display = 'block';
   document.getElementById('roundNum').textContent = stats.rounds + 1;
   document.getElementById('guessPanel').style.display = 'block';
+  document.getElementById('guessPanel').classList.add('expanded');
   google.maps.event.trigger(guessMap, 'resize');
   guessMap.setCenter({lat:20,lng:0});
-  guessMap.setZoom(1);
+  guessMap.setZoom(2);
 }
 
 function clearGuessState(){
@@ -214,6 +352,7 @@ function lockGuess(){
   if(score > stats.best) stats.best = score;
   saveStats();
   updateHeaderStats();
+  saveCloudState();
 
   actualMarker = new google.maps.Marker({
     position:{lat:currentLocation.lat,lng:currentLocation.lng}, map:guessMap,
@@ -254,8 +393,10 @@ function updateHeaderStats(){
 }
 
 function updateLocCountUI(){
-  document.getElementById('totalLocCount').textContent = allLocations.length;
-  document.getElementById('locCountText').textContent = `${allLocations.length} waypoints in rotation across the globe.`;
+  const count = getPool(currentGame).length;
+  document.getElementById('totalLocCount').textContent = currentGame === 'world' ? allLocations.length : count;
+  const label = currentGame === 'world' ? 'across the globe' : (currentGame === 'amazingRace' ? "from Our Amazing Race" : "from Family Fun");
+  document.getElementById('locCountText').textContent = `${count} waypoints ${label}.`;
 }
 
 function renderAddedList(){
@@ -270,9 +411,11 @@ function renderAddedList(){
     btn.textContent = '✕';
     btn.onclick = () => {
       const list = loadCustomLocations();
-      list.splice(i,1);
+      const [removed] = list.splice(i,1);
       saveCustomLocations(list);
+      if(removed && removed.cloudId) deleteCloudCustomLocation(removed.cloudId);
       buildLocationList();
+      deckByGame.world = null;
       updateLocCountUI();
       renderAddedList();
     };
@@ -283,10 +426,21 @@ function renderAddedList(){
 
 /* ---------------- UI wiring ---------------- */
 function wireUI(){
-  document.querySelectorAll('.tab').forEach(tab=>{
+  document.querySelectorAll('#gameTabs .tab').forEach(tab=>{
+    tab.addEventListener('click', ()=>{
+      if(tab.dataset.game === currentGame) return;
+      document.querySelectorAll('#gameTabs .tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      currentGame = tab.dataset.game;
+      updateLocCountUI();
+      startRound();
+    });
+  });
+
+  document.querySelectorAll('.tabs:not(#gameTabs) .tab').forEach(tab=>{
     tab.addEventListener('click', ()=>{
       if(tab.dataset.mode === mode) return;
-      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.tabs:not(#gameTabs) .tab').forEach(t=>t.classList.remove('active'));
       tab.classList.add('active');
       mode = tab.dataset.mode;
       startRound();
@@ -318,6 +472,14 @@ function wireUI(){
     stats = {totalScore:0, rounds:0, best:0};
     saveStats();
     updateHeaderStats();
+    saveCloudState();
+  });
+
+  document.getElementById('changeKeyBtn').addEventListener('click', ()=>{
+    if(confirm('Clear the saved Maps API key and re-enter it?')){
+      localStorage.removeItem(MAPS_KEY_STORAGE);
+      location.reload();
+    }
   });
 
   wireLocationSearch();
@@ -359,7 +521,7 @@ function closeDrawer(){
   document.getElementById('drawerBackdrop').classList.remove('visible');
 }
 
-function addCustomLocation(){
+async function addCustomLocation(){
   const name = document.getElementById('addName').value.trim();
   const country = document.getElementById('addCountry').value.trim();
   const lat = parseFloat(document.getElementById('addLat').value);
@@ -371,10 +533,15 @@ function addCustomLocation(){
     msg.className = 'msg show err';
     return;
   }
+  const newLoc = {name, country, lat, lng};
+  const cloudId = await saveCloudCustomLocation(newLoc);
+  if(cloudId) newLoc.cloudId = cloudId;
+
   const list = loadCustomLocations();
-  list.push({name, country, lat, lng});
+  list.push(newLoc);
   saveCustomLocations(list);
   buildLocationList();
+  deckByGame.world = null;
   updateLocCountUI();
   renderAddedList();
 
@@ -382,6 +549,6 @@ function addCustomLocation(){
   document.getElementById('addCountry').value = '';
   document.getElementById('addLat').value = '';
   document.getElementById('addLng').value = '';
-  msg.textContent = `${name} added to the rotation.`;
+  msg.textContent = cloudId ? `${name} added and synced to the cloud.` : `${name} added to the rotation.`;
   msg.className = 'msg show ok';
 }

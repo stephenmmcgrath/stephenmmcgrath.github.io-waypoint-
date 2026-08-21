@@ -314,6 +314,11 @@
   </div>
 </header>
 
+<div class="tabs" id="gameTabs">
+  <div class="tab active" data-game="world"><span class="dot"></span>World Tour</div>
+  <div class="tab" data-game="amazingRace"><span class="dot"></span>Our Amazing Race</div>
+  <div class="tab" data-game="familyFun"><span class="dot"></span>Family Fun</div>
+</div>
 <div class="tabs">
   <div class="tab active" data-mode="streetview"><span class="dot"></span>Street Guesser</div>
   <div class="tab" data-mode="satellite"><span class="dot"></span>Satellite Guesser</div>
@@ -341,6 +346,24 @@
 
   <button class="lock-guess-btn" id="lockGuessBtn" disabled>Lock In Guess</button>
 
+  <div class="start-overlay" id="keyOverlay" style="display:none;">
+    <div class="start-card">
+      <svg class="compass-big" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="17.5" stroke="#C9A15A" stroke-width="1.5"/>
+        <circle cx="20" cy="20" r="1.6" fill="#C9A15A"/>
+        <path d="M20 6 L23.5 20 L20 34 L16.5 20 Z" fill="#C9A15A" opacity="0.9"/>
+        <path d="M6 20 L20 16.5 L34 20 L20 23.5 Z" fill="#E4D8BE" opacity="0.5"/>
+      </svg>
+      <h2>One-time setup</h2>
+      <p>Paste your Google Maps API key below. It's saved only in this browser — never uploaded or stored in the site's files.</p>
+      <div class="field-group" style="text-align:left;">
+        <input type="text" id="keyInput" placeholder="AIzaSy…" style="width:100%; background:var(--ink); border:1px solid var(--line); color:var(--parchment); padding:12px 14px; border-radius:9px; font-family:'JetBrains Mono',monospace; font-size:0.85rem;">
+      </div>
+      <button class="primary-btn" id="saveKeyBtn" style="margin-top:14px;">Save & Continue</button>
+      <div class="msg" id="keyMsg" style="text-align:left;"></div>
+    </div>
+  </div>
+
   <div class="start-overlay" id="startOverlay">
     <div class="start-card">
       <svg class="compass-big" viewBox="0 0 40 40" fill="none">
@@ -350,7 +373,7 @@
         <path d="M6 20 L20 16.5 L34 20 L20 23.5 Z" fill="#E4D8BE" opacity="0.5"/>
       </svg>
       <h2>Ready when you are</h2>
-      <p>Drop into a street view or spot it from above — then pin your best guess on the map. Distance decides the score. <span id="locCountText"></span></p>
+      <p>Drop into a street view or spot it from above — then pin your best guess on the map. Distance decides the score. Every waypoint is dealt from a shuffled deck, never a fixed order. <span id="locCountText"></span></p>
       <button class="primary-btn" id="beginBtn">Begin Expedition</button>
     </div>
   </div>
@@ -381,7 +404,7 @@
   <h3>Field Notes</h3>
   <div class="drawer-sub">Session stats & your own added waypoints.</div>
 
-  <div class="stat-line"><span>Locations in rotation</span><b id="totalLocCount">—</b></div>
+  <div class="stat-line"><span>Locations in the shuffle</span><b id="totalLocCount">—</b></div>
   <div class="stat-line"><span>Session average score</span><b id="avgScore">—</b></div>
   <div class="stat-line"><span>Best guess (session)</span><b id="bestScoreStat">—</b></div>
 
@@ -418,10 +441,12 @@
 
   <div class="drawer-divider"></div>
   <div class="stat-line"><span>Reset session score</span><button class="ghost-btn" id="resetSessionBtn" style="margin:0; padding:6px 14px;">Reset</button></div>
+  <div class="stat-line"><span>Change Maps API key</span><button class="ghost-btn" id="changeKeyBtn" style="margin:0; padding:6px 14px;">Change</button></div>
 </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script src="locations.js"></script>
+<script src="subgames.js"></script>
 <script src="app.js"></script>
-<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAszW3TKKVaTZVhsGnF8v5cMb4wkdnEKz4&libraries=places&callback=initWaypoint&v=weekly"></script>
 </body>
 </html>
