@@ -8,7 +8,16 @@ let supa = null;
 const CUSTOM_KEY = 'waypoint_custom_locations';
 const STATS_KEY = 'waypoint_session_stats';
 const MAPS_KEY_STORAGE = 'waypoint_maps_api_key';
+const PROFILE_KEY = 'waypoint_profile_id';
 const MAX_STREETVIEW_ATTEMPTS = 6;
+
+function getProfileId(){
+  return localStorage.getItem(PROFILE_KEY) || 'shared';
+}
+function getProfileLabel(){
+  const id = getProfileId();
+  return id === 'shared' ? 'Default' : id;
+}
 
 /* ---------------- Maps API key bootstrap ---------------- */
 function bootstrapMaps(){
@@ -92,7 +101,7 @@ function initSupabase(){
 async function loadCloudState(){
   if(!supa) return null;
   try{
-    const { data, error } = await supa.from('waypoint_state').select('*').eq('id','shared').single();
+    const { data, error } = await supa.from('waypoint_state').select('*').eq('id', getProfileId()).maybeSingle();
     if(error) throw error;
     return data;
   }catch(e){ console.warn('Cloud state load failed, using local stats', e); return null; }
@@ -101,9 +110,9 @@ async function loadCloudState(){
 async function saveCloudState(){
   if(!supa) return;
   try{
-    await supa.from('waypoint_state').update({
-      total_score: stats.totalScore, rounds: stats.rounds, best: stats.best, updated_at: new Date().toISOString()
-    }).eq('id','shared');
+    await supa.from('waypoint_state').upsert({
+      id: getProfileId(), total_score: stats.totalScore, rounds: stats.rounds, best: stats.best, updated_at: new Date().toISOString()
+    });
   }catch(e){ console.warn('Cloud state save failed', e); }
 }
 
@@ -195,6 +204,7 @@ async function initWaypoint(){
   guessMap.addListener('click', onGuessMapClick);
 
   wireUI();
+  document.getElementById('startOverlay').style.display = 'flex';
 }
 
 function mapDarkStyle(){
@@ -482,6 +492,20 @@ function wireUI(){
     }
   });
 
+  document.getElementById('changeProfileBtn').addEventListener('click', async ()=>{
+    const name = prompt('Player or group name (e.g. "Barbara & Ian"). Each name keeps its own separate score:', getProfileLabel());
+    if(name === null) return;
+    const trimmed = name.trim();
+    localStorage.setItem(PROFILE_KEY, trimmed || 'shared');
+    const cloudState = await loadCloudState();
+    stats = cloudState
+      ? { totalScore:cloudState.total_score, rounds:cloudState.rounds, best:cloudState.best }
+      : { totalScore:0, rounds:0, best:0 };
+    saveStats();
+    updateHeaderStats();
+    document.getElementById('profileLabel').textContent = getProfileLabel();
+  });
+
   wireLocationSearch();
   updateHeaderStats();
   renderAddedList();
@@ -513,6 +537,7 @@ function wireLocationSearch(){
 function openDrawer(){
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawerBackdrop').classList.add('visible');
+  document.getElementById('profileLabel').textContent = getProfileLabel();
   updateHeaderStats();
   updateLocCountUI();
 }

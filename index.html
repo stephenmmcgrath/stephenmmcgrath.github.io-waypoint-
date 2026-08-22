@@ -364,7 +364,7 @@
     </div>
   </div>
 
-  <div class="start-overlay" id="startOverlay">
+  <div class="start-overlay" id="startOverlay" style="display:none;">
     <div class="start-card">
       <svg class="compass-big" viewBox="0 0 40 40" fill="none">
         <circle cx="20" cy="20" r="17.5" stroke="#C9A15A" stroke-width="1.5"/>
@@ -403,6 +403,11 @@
   <button class="close-drawer" id="closeDrawerBtn">✕</button>
   <h3>Field Notes</h3>
   <div class="drawer-sub">Session stats & your own added waypoints.</div>
+
+  <div class="stat-line"><span>Playing as</span><b id="profileLabel">—</b></div>
+  <button class="ghost-btn" id="changeProfileBtn" style="width:100%; margin-top:6px;">Switch Player / Group</button>
+
+  <div class="drawer-divider"></div>
 
   <div class="stat-line"><span>Locations in the shuffle</span><b id="totalLocCount">—</b></div>
   <div class="stat-line"><span>Session average score</span><b id="avgScore">—</b></div>
