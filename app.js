@@ -68,6 +68,7 @@ let hasGuessed = false;
 let deckByGame = {};
 let satelliteLockCenter = null;
 let pendingResume = null;
+let panoHistory = [];
 
 let stats = loadStats();
 
@@ -174,7 +175,6 @@ function haversineKm(lat1,lng1,lat2,lng2){
 }
 
 function scoreFromDistance(km){
-  // GeoGuessr-style exponential decay, tuned for a worldwide pool
   const raw = 5000 * Math.exp(-km/2000);
   return Math.max(0, Math.round(raw));
 }
@@ -202,6 +202,7 @@ async function initWaypoint(){
   guessMap = new google.maps.Map(document.getElementById('guessMap'), {
     center:{lat:20,lng:0}, zoom:1, minZoom:1,
     disableDefaultUI:true, zoomControl:true, streetViewControl:false,
+    zoomControlOptions: { position: google.maps.ControlPosition.LEFT_CENTER },
     mapTypeControl:false, fullscreenControl:false,
     backgroundColor:'#0F1B2B',
     styles:mapDarkStyle()
@@ -246,7 +247,10 @@ async function resumeFrom(pending){
   currentLocation = pending.location;
   if(mode === 'streetview'){
     if(!svService) svService = new google.maps.StreetViewService();
-    svService.getPanorama({location:{lat:currentLocation.lat,lng:currentLocation.lng}, radius:5000, source:google.maps.StreetViewSource.OUTDOOR}, (data,status)=>{
+    const svPref = document.getElementById('svType') ? document.getElementById('svType').value : 'outdoor';
+    const svSource = svPref === 'all' ? google.maps.StreetViewSource.DEFAULT : google.maps.StreetViewSource.OUTDOOR;
+    
+    svService.getPanorama({location:{lat:currentLocation.lat,lng:currentLocation.lng}, radius:5000, source:svSource}, (data,status)=>{
       if(status === google.maps.StreetViewStatus.OK){
         setupStreetViewStage(data.location.pano);
       } else {
@@ -316,7 +320,6 @@ function startRound(){
 let svService = null;
 function findStreetViewRound(attempt){
   if(attempt >= MAX_STREETVIEW_ATTEMPTS){
-    // fall back to satellite for this round rather than stall
     currentLocation = drawNextLocation();
     setupSatelliteStage(currentLocation);
     finishRoundSetup();
@@ -324,10 +327,13 @@ function findStreetViewRound(attempt){
   }
   const loc = drawNextLocation();
   if(!svService) svService = new google.maps.StreetViewService();
-  svService.getPanorama({location:{lat:loc.lat,lng:loc.lng}, radius:40000, source:google.maps.StreetViewSource.OUTDOOR}, (data,status)=>{
+  
+  const svPref = document.getElementById('svType') ? document.getElementById('svType').value : 'outdoor';
+  const svSource = svPref === 'all' ? google.maps.StreetViewSource.DEFAULT : google.maps.StreetViewSource.OUTDOOR;
+
+  svService.getPanorama({location:{lat:loc.lat,lng:loc.lng}, radius:40000, source:svSource}, (data,status)=>{
     if(status === google.maps.StreetViewStatus.OK){
       currentLocation = loc;
-      // use the panorama's actual position as the "true" answer, so scoring matches what's shown
       currentLocation = {...loc, lat:data.location.latLng.lat(), lng:data.location.latLng.lng()};
       setupStreetViewStage(data.location.pano);
       finishRoundSetup();
@@ -340,8 +346,15 @@ function findStreetViewRound(attempt){
 function setupStreetViewStage(panoId){
   document.getElementById('mapStage').style.display = 'none';
   document.getElementById('panoStage').style.display = 'block';
+  if(document.getElementById('svControls')) document.getElementById('svControls').style.display = 'flex';
+
+  const svPref = document.getElementById('svType') ? document.getElementById('svType').value : 'outdoor';
+  const canMove = svPref !== 'restricted';
+
+  panoHistory = [panoId];
 
   if(panorama){
+    panorama.setOptions({ clickToGo: canMove });
     panorama.setPano(panoId);
     panorama.setPov({heading:0, pitch:0});
   } else {
@@ -352,10 +365,18 @@ function setupStreetViewStage(panoId){
       linksControl:true,
       panControl:true,
       zoomControl:true,
+      zoomControlOptions: { position: google.maps.ControlPosition.LEFT_CENTER },
       fullscreenControl:false,
       motionTracking:false,
       motionTrackingControl:false,
-      clickToGo:true
+      clickToGo:canMove
+    });
+
+    panorama.addListener('pano_changed', () => {
+      const current = panorama.getPano();
+      if(panoHistory[panoHistory.length-1] !== current) {
+        panoHistory.push(current);
+      }
     });
   }
 }
@@ -363,27 +384,23 @@ function setupStreetViewStage(panoId){
 function setupSatelliteStage(loc){
   document.getElementById('panoStage').style.display = 'none';
   document.getElementById('mapStage').style.display = 'block';
+  if(document.getElementById('svControls')) document.getElementById('svControls').style.display = 'none';
 
   const zoom = 13 + Math.floor(Math.random()*2);
   satelliteLockCenter = {lat:loc.lat, lng:loc.lng};
 
   if(map){
+    map.setOptions({ minZoom: zoom });
     map.setCenter(satelliteLockCenter);
     map.setZoom(zoom);
   } else {
     map = new google.maps.Map(document.getElementById('mapStage'), {
-      center:satelliteLockCenter, zoom,
+      center:satelliteLockCenter, zoom, minZoom: zoom,
       mapTypeId:'satellite', disableDefaultUI:true,
-      draggable:false, scrollwheel:false, disableDoubleClickZoom:true,
-      zoomControl:true, gestureHandling:'none',
+      draggable:true, scrollwheel:true, disableDoubleClickZoom:false,
+      zoomControl:true, gestureHandling:'auto',
+      zoomControlOptions: { position: google.maps.ControlPosition.LEFT_CENTER },
       keyboardShortcuts:false, tilt:0
-    });
-    // zoom buttons can still shift the reported center in some browsers — snap back to the true point
-    map.addListener('center_changed', ()=>{
-      const c = map.getCenter();
-      if(c.lat().toFixed(4) != satelliteLockCenter.lat.toFixed(4) || c.lng().toFixed(4) != satelliteLockCenter.lng.toFixed(4)){
-        map.setCenter(satelliteLockCenter);
-      }
     });
   }
 }
@@ -416,7 +433,6 @@ function loadActiveRound(){
     const raw = localStorage.getItem(ACTIVE_ROUND_KEY);
     if(!raw) return null;
     const parsed = JSON.parse(raw);
-    // ignore anything older than 24h — start fresh instead
     if(Date.now() - parsed.ts > 24*60*60*1000) return null;
     return parsed;
   }catch(e){ return null; }
@@ -563,6 +579,26 @@ function wireUI(){
       startRound();
     }
   });
+  
+  const svBackBtn = document.getElementById('svBackBtn');
+  const svStartBtn = document.getElementById('svStartBtn');
+  if (svBackBtn) {
+    svBackBtn.addEventListener('click', () => {
+      if (panoHistory.length > 1) {
+        panoHistory.pop();
+        panorama.setPano(panoHistory[panoHistory.length - 1]);
+      }
+    });
+  }
+  if (svStartBtn) {
+    svStartBtn.addEventListener('click', () => {
+      if (panoHistory.length > 0) {
+        const startPano = panoHistory[0];
+        panoHistory = [startPano];
+        panorama.setPano(startPano);
+      }
+    });
+  }
 
   document.getElementById('lockGuessBtn').addEventListener('click', lockGuess);
   document.getElementById('nextRoundBtn').addEventListener('click', ()=>{
@@ -681,3 +717,4 @@ async function addCustomLocation(){
   msg.textContent = cloudId ? `${name} added and synced to the cloud.` : `${name} added to the rotation.`;
   msg.className = 'msg show ok';
 }
+
