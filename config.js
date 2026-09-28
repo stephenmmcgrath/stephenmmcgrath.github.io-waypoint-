@@ -1,0 +1,1 @@
+window.GEO_CONFIG = { url: "https://rkfoehpnleolzoffcjou.supabase.co/rest/v1/", key: "sb_publishable_MQmKVyjXRRZka-HVh6BAow_0J8dTJ8b" };
